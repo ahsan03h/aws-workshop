@@ -1,16 +1,36 @@
 #!/bin/bash
+set -e
+
+# Create necessary directories
 mkdir -p /var/log/gunicorn
 mkdir -p /var/log/django
 mkdir -p /var/www/conduit/static/
 
+# Change to the project directory
 cd /deploy/backend || exit 2
+
+# Install dependencies using pipenv
+# Also install libpq-dev for PostgreSQL development headers
+apt-get update
+apt-get install -y libpq-dev  # Add this line to install PostgreSQL development headers
 pipenv install
 
+# Set AWS region using instance metadata
 AWS_DEFAULT_REGION="$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region)"
 export AWS_DEFAULT_REGION
 
+# Print AWS region for debugging
+echo "AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION"
+
+# Set Django settings module
 DJANGO_SETTINGS_MODULE='conduit.settings.ec2'
 export DJANGO_SETTINGS_MODULE
 
+# Print Django settings module for debugging
+echo "DJANGO_SETTINGS_MODULE: $DJANGO_SETTINGS_MODULE"
+
+# Run Django migrations
 pipenv run python manage.py migrate
+
+# Collect static files
 pipenv run python manage.py collectstatic --no-input
