@@ -1,36 +1,40 @@
 #!/bin/bash
-set -e
 
-# Create necessary directories
+# Install PostgreSQL dependencies
+sudo yum install -y postgresql-devel
+
+# Add pg_config to path
+export PATH="$PATH:/usr/pgsql-12/bin"
+
+# Create log directories
 mkdir -p /var/log/gunicorn
 mkdir -p /var/log/django
 mkdir -p /var/www/conduit/static/
 
-# Change to the project directory
+# Install app dependencies
 cd /deploy/backend || exit 2
+pipenv install || {
+  echo "Pipenv install failed" >&2 
+  exit 1
+}
 
-# Install dependencies using pipenv
-# Also install libpq-dev for PostgreSQL development headers
-apt-get update
-apt-get install -y libpq-dev  # Add this line to install PostgreSQL development headers
-pipenv install
+# Activate virtualenv
+pipenv shell
 
-# Set AWS region using instance metadata
+# Configure environment 
 AWS_DEFAULT_REGION="$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region)"
 export AWS_DEFAULT_REGION
-
-# Print AWS region for debugging
-echo "AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION"
-
-# Set Django settings module
 DJANGO_SETTINGS_MODULE='conduit.settings.ec2'
 export DJANGO_SETTINGS_MODULE
 
-# Print Django settings module for debugging
-echo "DJANGO_SETTINGS_MODULE: $DJANGO_SETTINGS_MODULE"
-
-# Run Django migrations
+# Run database migrations
 pipenv run python manage.py migrate
 
-# Collect static files
-pipenv run python manage.py collectstatic --no-input
+# Collect static files if needed 
+if [ ! -d /var/www/conduit/static ]; then
+  pipenv run python manage.py collectstatic --no-input
+fi
+
+# Restart services
+sudo systemctl restart gunicorn
+sudo systemctl restart nginx
