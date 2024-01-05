@@ -1,43 +1,34 @@
 #!/bin/bash
 
-set -e  # Exit on error
+# Add these lines to enable debugging
+set -x
+exec > >(tee /var/log/codedeploy-afterinstall.log|logger -t codedeploy-afterinstall -s 2>/dev/console) 2>&1
+chmod 777 /var/log/codedeploy-afterinstall.log
 
-# Install PostgreSQL headers
-sudo yum install -y postgresql-devel
+mkdir -p /var/log/gunicorn
+mkdir -p /var/log/django
+mkdir -p /var/www/conduit/static/
 
-# Add pg_config to PATH
-export PATH="$PATH:/usr/pgsql-12/bin"
-
-# Install psycopg2 binary package
-pip install psycopg2-binary
-
-# Create log directories
-sudo mkdir -p /var/log/gunicorn
-sudo mkdir -p /var/log/django
-sudo mkdir -p /var/www/conduit/static/
-
-# Install app dependencies
 cd /deploy/backend || exit 2
+
+# Load virtual environment
 pipenv install --deploy --ignore-pipfile
 
-# Activate virtualenv
-source "$(pipenv --venv)/bin/activate"
+# Export AWS region
+AWS_DEFAULT_REGION="$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | jq -r .region)"
+export AWS_DEFAULT_REGION
 
-# Configure environment
-export AWS_DEFAULT_REGION=$(curl -s http://169.254.169.254/dynamic/instance-identity/document | jq -r .region)
-export DJANGO_SETTINGS_MODULE='conduit.settings.ec2'
+# Set Django settings module
+DJANGO_SETTINGS_MODULE='conduit.settings.ec2'
+export DJANGO_SETTINGS_MODULE
 
-# Run migrations
+# Run Django migrations
 pipenv run python manage.py migrate
 
-# Collect static files if needed
-if [ ! -d /var/www/conduit/static ]; then
-  pipenv run python manage.py collectstatic --no-input
-fi
+# Collect static files
+pipenv run python manage.py collectstatic --no-input
 
-# Restart services
-sudo systemctl restart gunicorn
-sudo systemctl restart nginx
+# Add any additional commands as needed
 
-# Deactivate virtualenv
-deactivate
+# Disable debugging
+set +x
